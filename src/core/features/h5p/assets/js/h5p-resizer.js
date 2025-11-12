@@ -74,6 +74,55 @@
   };
 
   /**
+   * Handle speech recognition start request from iframe.
+   *
+   * @private
+   * @param {Object} iframe Element
+   * @param {Object} data Payload
+   * @param {Function} respond Send a response to the iframe
+   */
+  actionHandlers.speech_recognition_start = function (iframe, data, respond) {
+    if (window.CoreH5PSpeechRecognitionHandler) {
+      window.CoreH5PSpeechRecognitionHandler.handleStart(data, respond);
+    } else {
+      respond('speech_recognition_response', {
+        requestId: data.requestId,
+        type: 'error',
+        error: 'not-allowed',
+        message: 'Speech recognition is not available'
+      });
+    }
+  };
+
+  /**
+   * Handle speech recognition stop request from iframe.
+   *
+   * @private
+   * @param {Object} iframe Element
+   * @param {Object} data Payload
+   * @param {Function} respond Send a response to the iframe
+   */
+  actionHandlers.speech_recognition_stop = function (iframe, data, respond) {
+    if (window.CoreH5PSpeechRecognitionHandler) {
+      window.CoreH5PSpeechRecognitionHandler.handleStop(data, respond);
+    }
+  };
+
+  /**
+   * Handle speech recognition abort request from iframe.
+   *
+   * @private
+   * @param {Object} iframe Element
+   * @param {Object} data Payload
+   * @param {Function} respond Send a response to the iframe
+   */
+  actionHandlers.speech_recognition_abort = function (iframe, data, respond) {
+    if (window.CoreH5PSpeechRecognitionHandler) {
+      window.CoreH5PSpeechRecognitionHandler.handleAbort(data, respond);
+    }
+  };
+
+  /**
    * Keyup event handler. Exits full screen on escape.
    *
    * @param {Event} event

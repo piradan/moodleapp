@@ -135,6 +135,11 @@ export class CoreH5PPlayer {
         html += '<script type="text/javascript" src="' +
                 CorePath.concatenatePaths(this.h5pCore.h5pFS.getCoreH5PPath(), 'moodle/js/embed.js') + '"></script>';
 
+        // Load the speech recognition polyfill to enable Web Speech API in H5P content.
+        html += '<script type="text/javascript" src="' +
+                CorePath.concatenatePaths(this.h5pCore.h5pFS.getCoreH5PPath(), 'moodle/js/speech-recognition-polyfill.js') +
+                '"></script>';
+
         result.jsRequires.forEach((jsUrl) => {
             html += '<script type="text/javascript" src="' + jsUrl + '"></script>';
         });
