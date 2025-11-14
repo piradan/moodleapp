@@ -87,6 +87,9 @@
         "high": 120
     },
     "customurlscheme": "moodlemobile",
+    "siteurl": "https://playground.imagineingles.com/",
+    "sitename": "Imagine Inglés",
+    "skipssoconfirmation": true,
     "sites": [],
     "multisitesdisplay": "",
     "sitefindersettings": {},
