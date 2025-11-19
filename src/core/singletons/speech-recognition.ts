@@ -70,12 +70,19 @@ export class CoreSpeechRecognition {
             throw new Error('Speech recognition not available');
         }
 
-        return new Promise<void>((resolve, reject) => {
+        // CRITICAL FIX: Add 10-second timeout to prevent hanging if permission dialog never responds
+        const permissionPromise = new Promise<void>((resolve, reject) => {
             window.plugins!.speechRecognition!.requestPermission(
                 () => resolve(),
                 (error: string) => reject(error),
             );
         });
+
+        const timeoutPromise = new Promise<void>((_, reject) => {
+            setTimeout(() => reject(new Error('Permission request timed out after 10 seconds')), 10000);
+        });
+
+        return Promise.race([permissionPromise, timeoutPromise]);
     }
 
     /**
@@ -120,12 +127,19 @@ export class CoreSpeechRecognition {
             return;
         }
 
-        return new Promise<void>((resolve, reject) => {
+        // CRITICAL FIX: Add 5-second timeout to prevent hanging if stopListening never responds
+        const stopPromise = new Promise<void>((resolve, reject) => {
             window.plugins!.speechRecognition!.stopListening(
                 () => resolve(),
                 (error: string) => reject(error),
             );
         });
+
+        const timeoutPromise = new Promise<void>((_, reject) => {
+            setTimeout(() => reject(new Error('Stop listening timed out after 5 seconds')), 5000);
+        });
+
+        return Promise.race([stopPromise, timeoutPromise]);
     }
 
     /**

@@ -100,11 +100,32 @@ export class CoreH5PSpeechRecognitionHandlerService {
      * @returns Promise that rejects on timeout.
      */
     protected withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const timeoutPromise = new Promise<T>((_, reject) => {
+            timeoutId = setTimeout(() => {
+                timeoutId = null;
+                reject(new Error(errorMessage));
+            }, timeoutMs);
+        });
+
+        // CRITICAL FIX: Clear timeout on successful completion to prevent memory leak
         return Promise.race([
-            promise,
-            new Promise<T>((_, reject) =>
-                setTimeout(() => reject(new Error(errorMessage)), timeoutMs),
-            ),
+            promise.then((result) => {
+                if (timeoutId !== null) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+
+                return result;
+            }).catch((error) => {
+                if (timeoutId !== null) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+                throw error;
+            }),
+            timeoutPromise,
         ]);
     }
 
@@ -121,12 +142,14 @@ export class CoreH5PSpeechRecognitionHandlerService {
         try {
             // Validate request ID
             const requestId = typeof data.requestId === 'string' ? data.requestId : '';
-            if (!requestId) {
+            // SECURITY FIX: Validate request ID format (defense in depth)
+            const requestIdRegex = /^speech_\d+_\d+$/;
+            if (!requestId || !requestIdRegex.test(requestId)) {
                 respond('speech_recognition_response', {
-                    requestId: '',
+                    requestId: requestId || '',
                     type: 'error',
                     error: 'aborted',
-                    message: 'Invalid request ID',
+                    message: 'Invalid request ID format. Expected format: speech_<counter>_<timestamp>',
                 });
 
                 return;
@@ -305,6 +328,9 @@ export class CoreH5PSpeechRecognitionHandlerService {
             return;
         }
 
+        // CRITICAL FIX: Acquire mutex lock to prevent race with handleStart/handleAbort
+        const release = await this.acquireLock();
+
         try {
             await CoreSpeechRecognition.stopListening();
 
@@ -317,10 +343,22 @@ export class CoreH5PSpeechRecognitionHandlerService {
             this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
         } catch (error) {
+            // CRITICAL FIX: Send error response to iframe
+            this.logger.error('Error stopping speech recognition:', error);
+
+            respond('speech_recognition_response', {
+                requestId,
+                type: 'error',
+                error: 'aborted',
+                message: error instanceof Error ? error.message : 'Failed to stop speech recognition',
+            });
+
             // Even if stop fails, clean up
             this.isListening = false;
             this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
+        } finally {
+            release();
         }
     }
 
@@ -340,14 +378,23 @@ export class CoreH5PSpeechRecognitionHandlerService {
 
         // FIX: Only stop native plugin if this is the current request
         if (this.currentRequestId === requestId) {
+            // CRITICAL FIX: Acquire mutex lock to prevent race with handleStart/handleStop
+            const release = await this.acquireLock();
+
             try {
                 await CoreSpeechRecognition.stopListening();
-            } catch {
-                // Ignore errors on abort
-            }
 
-            this.isListening = false;
-            this.currentRequestId = null;
+                this.isListening = false;
+                this.currentRequestId = null;
+            } catch (error) {
+                // Ignore errors on abort but log them
+                this.logger.warn('Error aborting speech recognition:', error);
+
+                this.isListening = false;
+                this.currentRequestId = null;
+            } finally {
+                release();
+            }
         }
 
         this.activeRecognitions.delete(requestId);

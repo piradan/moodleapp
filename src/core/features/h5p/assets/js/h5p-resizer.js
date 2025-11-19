@@ -169,10 +169,11 @@
       return true;
     }
 
-    // Allow null origin for sandboxed iframes (with caution)
+    // Reject null origin - sandboxed iframes are not supported for security reasons
+    // If sandboxed iframe support is needed, implement proper src attribute validation
     if (origin === 'null') {
-      // Only allow if we can verify the iframe is ours
-      return true;  // Additional validation happens in iframe lookup
+      console.warn('[H5P Security] Rejecting null origin (sandboxed iframe not supported)');
+      return false;
     }
 
     return false;
@@ -225,6 +226,12 @@
           }
           data.action = action;
           data.context = 'h5p';
+
+          // CRITICAL FIX: Check if iframe still exists before postMessage
+          if (!event.source || !event.source.postMessage) {
+            console.warn('[H5P] Cannot respond - iframe window destroyed');
+            return;
+          }
 
           // SECURITY FIX: Use specific origin instead of wildcard
           event.source.postMessage(data, event.origin);

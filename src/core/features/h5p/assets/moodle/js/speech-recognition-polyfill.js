@@ -143,6 +143,38 @@
             return;
         }
 
+        // CRITICAL FIX: Prevent reuse after cleanup - instance is no longer functional
+        if (this._cleanedUp) {
+            this._fireError('failed', 'recognition instance has been cleaned up and cannot be reused. Create a new SpeechRecognition instance.');
+            return;
+        }
+
+        // CRITICAL FIX: Re-add message listener if it was removed
+        if (!this._messageHandler) {
+            this._messageHandler = function(event) {
+                // Same security checks as original
+                if (self._parentOrigin !== '*' && event.origin !== self._parentOrigin) {
+                    return;
+                }
+
+                if (!event || !event.data || typeof event.data !== 'object') {
+                    return;
+                }
+
+                if (event.data.context !== 'h5p' || event.data.action !== 'speech_recognition_response') {
+                    return;
+                }
+
+                // Only handle our own responses
+                if (event.data.requestId !== self._requestId) {
+                    return;
+                }
+
+                self._handleResponse(event.data);
+            };
+            window.addEventListener('message', this._messageHandler);
+        }
+
         this._started = true;
         this._aborted = false;
         this._requestId = 'speech_' + (++requestCounter) + '_' + Date.now();
