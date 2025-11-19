@@ -83,7 +83,15 @@
    */
   actionHandlers.speech_recognition_start = function (iframe, data, respond) {
     if (window.CoreH5PSpeechRecognitionHandler) {
-      window.CoreH5PSpeechRecognitionHandler.handleStart(data, respond);
+      window.CoreH5PSpeechRecognitionHandler.handleStart(data, respond).catch(function(error) {
+        console.error('[H5P Speech Recognition] Start error:', error);
+        respond('speech_recognition_response', {
+          requestId: data.requestId,
+          type: 'error',
+          error: 'network',
+          message: error.message || 'Unknown error occurred'
+        });
+      });
     } else {
       respond('speech_recognition_response', {
         requestId: data.requestId,
@@ -104,7 +112,10 @@
    */
   actionHandlers.speech_recognition_stop = function (iframe, data, respond) {
     if (window.CoreH5PSpeechRecognitionHandler) {
-      window.CoreH5PSpeechRecognitionHandler.handleStop(data, respond);
+      window.CoreH5PSpeechRecognitionHandler.handleStop(data, respond).catch(function(error) {
+        console.error('[H5P Speech Recognition] Stop error:', error);
+        // Don't send error response for stop - just log it
+      });
     }
   };
 
@@ -118,7 +129,10 @@
    */
   actionHandlers.speech_recognition_abort = function (iframe, data, respond) {
     if (window.CoreH5PSpeechRecognitionHandler) {
-      window.CoreH5PSpeechRecognitionHandler.handleAbort(data, respond);
+      window.CoreH5PSpeechRecognitionHandler.handleAbort(data, respond).catch(function(error) {
+        console.error('[H5P Speech Recognition] Abort error:', error);
+        // Don't send error response for abort - just log it
+      });
     }
   };
 

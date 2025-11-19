@@ -63,10 +63,21 @@
         this._started = false;
         this._requestId = null;
         this._aborted = false;
+        this._timeouts = []; // Store timeout references for cleanup
+        this._messageHandler = null; // Store handler reference for cleanup
+        this._parentOrigin = window.location.ancestorOrigins && window.location.ancestorOrigins[0]
+            ? window.location.ancestorOrigins[0]
+            : '*'; // Get parent origin for security
 
-        // Listen for messages from parent window
-        window.addEventListener('message', function(event) {
-            if (event.data.context !== 'h5p' || event.data.action !== 'speech_recognition_response') {
+        // Create bound message handler
+        this._messageHandler = function(event) {
+            // SECURITY: Validate origin if we know it
+            if (self._parentOrigin !== '*' && event.origin !== self._parentOrigin) {
+                return; // Ignore messages from untrusted origins
+            }
+
+            // Validate message structure
+            if (!event.data || event.data.context !== 'h5p' || event.data.action !== 'speech_recognition_response') {
                 return;
             }
 
@@ -75,7 +86,10 @@
             }
 
             self._handleResponse(event.data);
-        });
+        };
+
+        // Listen for messages from parent window
+        window.addEventListener('message', this._messageHandler);
     }
 
     /**
@@ -94,13 +108,14 @@
         this._requestId = 'speech_' + (++requestCounter) + '_' + Date.now();
 
         // Fire start event
-        setTimeout(function() {
+        var startTimeout = setTimeout(function() {
             if (self._aborted) return;
             self._fireEvent('start');
             self._fireEvent('audiostart');
             self._fireEvent('soundstart');
             self._fireEvent('speechstart');
         }, 100);
+        this._timeouts.push(startTimeout);
 
         // Request permission and start recognition via parent window
         window.parent.postMessage({
@@ -113,7 +128,7 @@
                 showPartial: this.interimResults,
                 continuous: this.continuous
             }
-        }, '*');
+        }, this._parentOrigin);
     };
 
     /**
@@ -128,7 +143,7 @@
             context: 'h5p',
             action: 'speech_recognition_stop',
             requestId: this._requestId
-        }, '*');
+        }, this._parentOrigin);
     };
 
     /**
@@ -138,6 +153,7 @@
         this._aborted = true;
 
         if (!this._started) {
+            this._cleanup();
             return;
         }
 
@@ -145,7 +161,7 @@
             context: 'h5p',
             action: 'speech_recognition_abort',
             requestId: this._requestId
-        }, '*');
+        }, this._parentOrigin);
 
         this._cleanup();
     };
@@ -170,12 +186,14 @@
 
             // If final result and not continuous, end recognition
             if (data.isFinal && !this.continuous) {
-                setTimeout(function() {
+                var endTimeout = setTimeout(function() {
+                    if (self._aborted) return;
                     self._fireEvent('speechend');
                     self._fireEvent('soundend');
                     self._fireEvent('audioend');
                     self._fireEnd();
                 }, 100);
+                this._timeouts.push(endTimeout);
             }
         } else if (data.type === 'error') {
             this._fireError(data.error, data.message);
@@ -276,8 +294,21 @@
 
     /**
      * Cleanup after recognition ends
+     * FIX: Clear all timeouts and remove event listener to prevent memory leaks
      */
     SpeechRecognitionPolyfill.prototype._cleanup = function() {
+        // Clear all pending timeouts
+        for (var i = 0; i < this._timeouts.length; i++) {
+            clearTimeout(this._timeouts[i]);
+        }
+        this._timeouts = [];
+
+        // Remove message listener to prevent memory leak
+        if (this._messageHandler) {
+            window.removeEventListener('message', this._messageHandler);
+            this._messageHandler = null;
+        }
+
         this._started = false;
         this._requestId = null;
     };

@@ -28,6 +28,9 @@ export class CoreH5PSpeechRecognitionHandlerService {
         aborted: boolean;
     }> = new Map();
 
+    protected isListening = false; // Track if native plugin is currently listening
+    protected currentRequestId: string | null = null; // Track which request is using the native plugin
+
     constructor() {
         // Expose this service globally for h5p-resizer.js to access
         if (typeof window !== 'undefined') {
@@ -59,6 +62,18 @@ export class CoreH5PSpeechRecognitionHandlerService {
             return;
         }
 
+        // FIX: Prevent concurrent recognition requests
+        if (this.isListening && this.currentRequestId !== requestId) {
+            respond('speech_recognition_response', {
+                requestId,
+                type: 'error',
+                error: 'aborted',
+                message: 'Another speech recognition session is already active. Please try again.',
+            });
+
+            return;
+        }
+
         try {
             // Check if available
             const available = await CoreSpeechRecognition.isAvailable();
@@ -80,6 +95,20 @@ export class CoreH5PSpeechRecognitionHandlerService {
                 aborted: false,
             });
 
+            // Mark as listening before starting
+            this.isListening = true;
+            this.currentRequestId = requestId;
+
+            // Check if aborted before starting
+            const recognitionBeforeStart = this.activeRecognitions.get(requestId);
+            if (!recognitionBeforeStart || recognitionBeforeStart.aborted) {
+                this.isListening = false;
+                this.currentRequestId = null;
+                this.activeRecognitions.delete(requestId);
+
+                return;
+            }
+
             // Start listening
             const matches = await CoreSpeechRecognition.startListening({
                 language: data.options.language,
@@ -91,6 +120,8 @@ export class CoreH5PSpeechRecognitionHandlerService {
             // Check if aborted in the meantime
             const recognition = this.activeRecognitions.get(requestId);
             if (!recognition || recognition.aborted) {
+                this.isListening = false;
+                this.currentRequestId = null;
                 this.activeRecognitions.delete(requestId);
 
                 return;
@@ -121,9 +152,20 @@ export class CoreH5PSpeechRecognitionHandlerService {
                 });
             }
 
+            this.isListening = false;
+            this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
         } catch (error) {
+            this.isListening = false;
+            this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
+
+            // FIX: Try to stop native plugin on error
+            try {
+                await CoreSpeechRecognition.stopListening();
+            } catch {
+                // Ignore errors when stopping
+            }
 
             let errorType = 'network';
             let message = 'Speech recognition failed';
@@ -166,6 +208,13 @@ export class CoreH5PSpeechRecognitionHandlerService {
             return; // Not found, probably already stopped
         }
 
+        // FIX: Only stop native plugin if this is the current request
+        if (this.currentRequestId !== requestId) {
+            this.activeRecognitions.delete(requestId);
+
+            return;
+        }
+
         try {
             await CoreSpeechRecognition.stopListening();
 
@@ -174,9 +223,13 @@ export class CoreH5PSpeechRecognitionHandlerService {
                 type: 'end',
             });
 
+            this.isListening = false;
+            this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
         } catch (error) {
             // Even if stop fails, clean up
+            this.isListening = false;
+            this.currentRequestId = null;
             this.activeRecognitions.delete(requestId);
         }
     }
@@ -195,13 +248,25 @@ export class CoreH5PSpeechRecognitionHandlerService {
             recognition.aborted = true;
         }
 
-        try {
-            await CoreSpeechRecognition.stopListening();
-        } catch {
-            // Ignore errors on abort
+        // FIX: Only stop native plugin if this is the current request
+        if (this.currentRequestId === requestId) {
+            try {
+                await CoreSpeechRecognition.stopListening();
+            } catch {
+                // Ignore errors on abort
+            }
+
+            this.isListening = false;
+            this.currentRequestId = null;
         }
 
         this.activeRecognitions.delete(requestId);
+
+        // FIX: Send abort confirmation response
+        respond('speech_recognition_response', {
+            requestId,
+            type: 'end',
+        });
     }
 
 }
