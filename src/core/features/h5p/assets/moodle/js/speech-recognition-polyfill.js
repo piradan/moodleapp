@@ -63,11 +63,10 @@
         this._started = false;
         this._requestId = null;
         this._aborted = false;
+        this._cleanedUp = false;
         this._timeouts = []; // Store timeout references for cleanup
         this._messageHandler = null; // Store handler reference for cleanup
-        this._parentOrigin = window.location.ancestorOrigins && window.location.ancestorOrigins[0]
-            ? window.location.ancestorOrigins[0]
-            : '*'; // Get parent origin for security
+        this._parentOrigin = this._getParentOrigin();
 
         // Create bound message handler
         this._messageHandler = function(event) {
@@ -77,7 +76,11 @@
             }
 
             // Validate message structure
-            if (!event.data || event.data.context !== 'h5p' || event.data.action !== 'speech_recognition_response') {
+            if (!event || !event.data || typeof event.data !== 'object') {
+                return;
+            }
+
+            if (event.data.context !== 'h5p' || event.data.action !== 'speech_recognition_response') {
                 return;
             }
 
@@ -91,6 +94,43 @@
         // Listen for messages from parent window
         window.addEventListener('message', this._messageHandler);
     }
+
+    /**
+     * Safely determine parent origin across all browsers
+     * @private
+     */
+    SpeechRecognitionPolyfill.prototype._getParentOrigin = function() {
+        // Try ancestorOrigins first (Chrome, newer Safari)
+        if (window.location.ancestorOrigins && window.location.ancestorOrigins.length > 0) {
+            return window.location.ancestorOrigins[0];
+        }
+
+        // Try referrer (works in most browsers)
+        if (document.referrer) {
+            try {
+                var referrerUrl = new URL(document.referrer);
+                return referrerUrl.origin;
+            } catch (e) {
+                console.warn('[H5P Speech] Invalid referrer URL');
+            }
+        }
+
+        // Try to access parent.location (will throw if cross-origin)
+        try {
+            if (window.parent && window.parent !== window) {
+                // This will throw if cross-origin
+                var parentLocation = window.parent.location.href;
+                return window.parent.location.origin;
+            }
+        } catch (e) {
+            // Cross-origin, can't access
+            console.warn('[H5P Speech] Cross-origin parent, cannot determine origin');
+        }
+
+        // Last resort: Use current window origin (safer than *)
+        // This works for same-origin iframes
+        return window.location.origin;
+    };
 
     /**
      * Start speech recognition
@@ -109,7 +149,7 @@
 
         // Fire start event
         var startTimeout = setTimeout(function() {
-            if (self._aborted) return;
+            if (self._aborted || self._cleanedUp) return;
             self._fireEvent('start');
             self._fireEvent('audiostart');
             self._fireEvent('soundstart');
@@ -250,9 +290,17 @@
      * @param {String} type Event type
      */
     SpeechRecognitionPolyfill.prototype._fireEvent = function(type) {
+        if (this._cleanedUp) {
+            return; // Don't fire events if cleaned up
+        }
+
         var handler = this['on' + type];
-        if (handler) {
-            handler(this._createEvent(type));
+        if (handler && typeof handler === 'function') {
+            try {
+                handler(this._createEvent(type));
+            } catch (e) {
+                console.error('[H5P Speech] Error in event handler:', e);
+            }
         }
     };
 
@@ -297,6 +345,9 @@
      * FIX: Clear all timeouts and remove event listener to prevent memory leaks
      */
     SpeechRecognitionPolyfill.prototype._cleanup = function() {
+        // Set cleanup flag FIRST to prevent any pending callbacks from executing
+        this._cleanedUp = true;
+
         // Clear all pending timeouts
         for (var i = 0; i < this._timeouts.length; i++) {
             clearTimeout(this._timeouts[i]);

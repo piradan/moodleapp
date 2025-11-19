@@ -30,6 +30,7 @@ export class CoreH5PSpeechRecognitionHandlerService {
 
     protected isListening = false; // Track if native plugin is currently listening
     protected currentRequestId: string | null = null; // Track which request is using the native plugin
+    protected recognitionMutex: Promise<void> = Promise.resolve(); // Mutex for preventing race conditions
 
     constructor() {
         // Expose this service globally for h5p-resizer.js to access
@@ -43,38 +44,117 @@ export class CoreH5PSpeechRecognitionHandlerService {
     }
 
     /**
+     * Validate and sanitize speech recognition options from iframe.
+     *
+     * @param options Options to validate.
+     * @returns Validated options.
+     */
+    protected validateSpeechOptions(options: any): CoreH5PSpeechRecognitionOptions {
+        // Validate language - must be valid BCP 47 language code
+        const languageRegex = /^[a-z]{2,3}(-[A-Z]{2})?$/;
+        const language = typeof options.language === 'string' &&
+                        languageRegex.test(options.language)
+                        ? options.language
+                        : 'en-US';
+
+        // Validate matches - must be positive integer between 1-10
+        let matches = 5;
+        if (typeof options.matches === 'number' &&
+            Number.isFinite(options.matches) &&
+            options.matches >= 1 &&
+            options.matches <= 10) {
+            matches = Math.floor(options.matches);
+        }
+
+        // Validate booleans
+        const showPartial = options.showPartial === true;
+        const continuous = options.continuous === true;
+
+        return { language, matches, showPartial, continuous };
+    }
+
+    /**
+     * Acquire mutex lock for recognition operations.
+     *
+     * @returns Function to release the lock.
+     */
+    protected async acquireLock(): Promise<() => void> {
+        const previousLock = this.recognitionMutex;
+        let releaseLock!: () => void;
+
+        this.recognitionMutex = new Promise(resolve => {
+            releaseLock = resolve;
+        });
+
+        await previousLock;
+
+        return releaseLock;
+    }
+
+    /**
+     * Wrap promise with timeout.
+     *
+     * @param promise Promise to wrap.
+     * @param timeoutMs Timeout in milliseconds.
+     * @param errorMessage Error message for timeout.
+     * @returns Promise that rejects on timeout.
+     */
+    protected withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+        return Promise.race([
+            promise,
+            new Promise<T>((_, reject) =>
+                setTimeout(() => reject(new Error(errorMessage)), timeoutMs),
+            ),
+        ]);
+    }
+
+    /**
      * Handle start speech recognition request.
      *
      * @param data Request data from iframe.
      * @param respond Function to respond to iframe.
      */
     async handleStart(data: CoreH5PSpeechRecognitionStartData, respond: CoreH5PRespondFunction): Promise<void> {
-        const requestId = data.requestId;
-
-        if (!CorePlatform.isMobile()) {
-            respond('speech_recognition_response', {
-                requestId,
-                type: 'error',
-                error: 'not-allowed',
-                message: 'Speech recognition is only available on mobile devices',
-            });
-
-            return;
-        }
-
-        // FIX: Prevent concurrent recognition requests
-        if (this.isListening && this.currentRequestId !== requestId) {
-            respond('speech_recognition_response', {
-                requestId,
-                type: 'error',
-                error: 'aborted',
-                message: 'Another speech recognition session is already active. Please try again.',
-            });
-
-            return;
-        }
+        // FIX: Acquire mutex lock to prevent race conditions
+        const release = await this.acquireLock();
 
         try {
+            // Validate request ID
+            const requestId = typeof data.requestId === 'string' ? data.requestId : '';
+            if (!requestId) {
+                respond('speech_recognition_response', {
+                    requestId: '',
+                    type: 'error',
+                    error: 'aborted',
+                    message: 'Invalid request ID',
+                });
+
+                return;
+            }
+
+            if (!CorePlatform.isMobile()) {
+                respond('speech_recognition_response', {
+                    requestId,
+                    type: 'error',
+                    error: 'not-allowed',
+                    message: 'Speech recognition is only available on mobile devices',
+                });
+
+                return;
+            }
+
+            // FIX: Prevent concurrent recognition requests
+            if (this.isListening) {
+                respond('speech_recognition_response', {
+                    requestId,
+                    type: 'error',
+                    error: 'aborted',
+                    message: 'Another speech recognition session is already active. Please try again.',
+                });
+
+                return;
+            }
+
             // Check if available
             const available = await CoreSpeechRecognition.isAvailable();
             if (!available) {
@@ -88,9 +168,12 @@ export class CoreH5PSpeechRecognitionHandlerService {
                 return;
             }
 
+            // FIX: Validate and sanitize all input from iframe
+            const validatedOptions = this.validateSpeechOptions(data.options || {});
+
             // Store the active recognition
             this.activeRecognitions.set(requestId, {
-                options: data.options,
+                options: validatedOptions,
                 respond,
                 aborted: false,
             });
@@ -109,13 +192,17 @@ export class CoreH5PSpeechRecognitionHandlerService {
                 return;
             }
 
-            // Start listening
-            const matches = await CoreSpeechRecognition.startListening({
-                language: data.options.language,
-                matches: data.options.matches || 5,
-                showPartial: data.options.showPartial || false,
-                showPopup: false, // Don't show native popup for H5P
-            });
+            // FIX: Start listening with timeout protection
+            const matches = await this.withTimeout(
+                CoreSpeechRecognition.startListening({
+                    language: validatedOptions.language,
+                    matches: validatedOptions.matches,
+                    showPartial: validatedOptions.showPartial,
+                    showPopup: false, // Don't show native popup for H5P
+                }),
+                30000, // 30 second timeout
+                'Speech recognition timed out after 30 seconds',
+            );
 
             // Check if aborted in the meantime
             const recognition = this.activeRecognitions.get(requestId);
@@ -186,11 +273,14 @@ export class CoreH5PSpeechRecognitionHandlerService {
             }
 
             respond('speech_recognition_response', {
-                requestId,
+                requestId: data.requestId || '',
                 type: 'error',
                 error: errorType,
                 message,
             });
+        } finally {
+            // FIX: Always release the mutex lock
+            release();
         }
     }
 

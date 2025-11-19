@@ -147,35 +147,93 @@
     }
   };
 
+  /**
+   * Check if origin is allowed for H5P content.
+   *
+   * @param {string} origin Origin to check
+   * @returns {boolean} True if origin is allowed
+   */
+  function isOriginAllowed(origin) {
+    // Allow same origin
+    if (origin === window.location.origin) {
+      return true;
+    }
+
+    // Allow file protocol for local content
+    if (origin === 'file://') {
+      return true;
+    }
+
+    // Allow app custom scheme
+    if (origin.indexOf('moodleappfs://') === 0) {
+      return true;
+    }
+
+    // Allow null origin for sandboxed iframes (with caution)
+    if (origin === 'null') {
+      // Only allow if we can verify the iframe is ours
+      return true;  // Additional validation happens in iframe lookup
+    }
+
+    return false;
+  }
+
   // Listen for messages from iframes
   window.addEventListener('message', function receiveMessage(event) {
+    // SECURITY FIX: Validate message structure first
+    if (!event || !event.data || typeof event.data !== 'object') {
+      return;
+    }
+
     if (event.data.context !== 'h5p') {
       return; // Only handle h5p requests.
+    }
+
+    // SECURITY FIX: Validate origin
+    if (!isOriginAllowed(event.origin)) {
+      console.warn('[H5P Security] Blocked message from untrusted origin:', event.origin);
+      return;
+    }
+
+    // SECURITY FIX: Validate action is a safe string
+    if (typeof event.data.action !== 'string' || !event.data.action) {
+      console.warn('[H5P Security] Invalid action type');
+      return;
     }
 
     // Find out who sent the message
     var iframe, iframes = document.getElementsByTagName('iframe');
     for (var i = 0; i < iframes.length; i++) {
-      if (iframes[i].contentWindow === event.source) {
+      if (iframes[i] && iframes[i].contentWindow === event.source) {
         iframe = iframes[i];
         break;
       }
     }
 
     if (!iframe) {
+      console.warn('[H5P] Message from unknown source');
       return; // Cannot find sender
     }
 
-    // Find action handler handler
-    if (actionHandlers[event.data.action]) {
-      actionHandlers[event.data.action](iframe, event.data, function respond(action, data) {
-        if (data === undefined) {
-          data = {};
-        }
-        data.action = action;
-        data.context = 'h5p';
-        event.source.postMessage(data, event.origin);
-      });
+    // SECURITY FIX: Prevent prototype pollution - use hasOwnProperty check
+    if (Object.prototype.hasOwnProperty.call(actionHandlers, event.data.action) &&
+        typeof actionHandlers[event.data.action] === 'function') {
+      try {
+        actionHandlers[event.data.action](iframe, event.data, function respond(action, data) {
+          if (data === undefined) {
+            data = {};
+          }
+          data.action = action;
+          data.context = 'h5p';
+
+          // SECURITY FIX: Use specific origin instead of wildcard
+          event.source.postMessage(data, event.origin);
+        });
+      } catch (error) {
+        console.error('[H5P] Error handling action:', event.data.action, error);
+      }
+    } else {
+      console.warn('[H5P] Unknown or invalid action:', event.data.action);
     }
   }, false);
 
@@ -186,8 +244,26 @@
     action: 'ready'
   };
   for (var i = 0; i < iframes.length; i++) {
-    if (iframes[i].src.indexOf('h5p') !== -1) {
-      iframes[i].contentWindow.postMessage(ready, '*');
+    if (iframes[i] && iframes[i].src && iframes[i].src.indexOf('h5p') !== -1) {
+      if (iframes[i].contentWindow) {
+        try {
+          // SECURITY FIX: Try to determine origin, fallback to wildcard only if needed
+          var iframeOrigin = '*';
+          try {
+            if (iframes[i].src) {
+              var url = new URL(iframes[i].src);
+              iframeOrigin = url.origin;
+            }
+          } catch (e) {
+            // Invalid URL or cross-origin, use wildcard
+            iframeOrigin = '*';
+          }
+
+          iframes[i].contentWindow.postMessage(ready, iframeOrigin);
+        } catch (error) {
+          console.warn('[H5P] Could not send ready message to iframe:', error);
+        }
+      }
     }
   }
 
