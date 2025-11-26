@@ -1,8 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget android-versionCode="51001" id="com.moodle.moodlemobile" ios-CFBundleVersion="5.1.0.1" version="5.1.0" versionCode="51001" xmlns="http://www.w3.org/ns/widgets" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>Moodle</name>
-    <description>Moodle official app</description>
-    <author email="mobile@moodle.com" href="http://moodle.com">Moodle Mobile team</author>
+<widget android-versionCode="51001" id="com.imagineingles.playground" ios-CFBundleVersion="5.1.0.1" version="5.1.0" versionCode="51001" xmlns="http://www.w3.org/ns/widgets" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>iMagine inglês</name>
+    <description>iMagine inglês mobile learning app</description>
+    <author email="support@imagineingles.com" href="https://playground.imagineingles.com">iMagine inglês</author>
     <content src="index.html" />
     <access origin="*" />
     <access launch-external="yes" origin="tel:*" />
@@ -90,6 +90,12 @@
         </edit-config>
         <edit-config file="*-Info.plist" mode="merge" target="NSPhotoLibraryUsageDescription">
             <string>We need photo library access to get pictures from there so you can use them for changing your profile picture, attach them in your tasks submission and share them with the teachers.</string>
+        </edit-config>
+        <edit-config file="*-Info.plist" mode="merge" target="NSMicrophoneUsageDescription">
+            <string>We need microphone access to record audio and for speech recognition in interactive learning activities.</string>
+        </edit-config>
+        <edit-config file="*-Info.plist" mode="merge" target="NSSpeechRecognitionUsageDescription">
+            <string>We need speech recognition access for interactive learning activities that use voice input.</string>
         </edit-config>
         <edit-config file="*-Info.plist" mode="merge" target="UISupportsDocumentBrowser">
             <true />

@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { NgModule, Type, provideAppInitializer } from '@angular/core';
+import { NgModule, Type, provideAppInitializer, inject } from '@angular/core';
 
 import { CorePluginFileDelegate } from '@services/plugin-file-delegate';
 import { CORE_SITE_SCHEMAS } from '@services/sites';
 import { SITE_SCHEMA } from './services/database/h5p';
 import { CoreH5PPluginFileHandler } from './services/handlers/pluginfile';
+import { CoreH5PSpeechRecognitionHandlerService } from './services/speech-recognition-handler';
 
 /**
  * Get H5P services.
@@ -41,6 +42,9 @@ export async function getH5PServices(): Promise<Type<unknown>[]> {
         },
         provideAppInitializer(() => {
             CorePluginFileDelegate.registerHandler(CoreH5PPluginFileHandler.instance);
+
+            // Initialize speech recognition handler for H5P iframes
+            inject(CoreH5PSpeechRecognitionHandlerService);
         }),
     ],
 })

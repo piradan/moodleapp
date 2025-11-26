@@ -9,7 +9,26 @@
  * -------------------------------------------
  */
 :root {
+    /* Imagine Inglés Brand Colors */
+    /* Primary Color - Red (#ed1c24) */
+    --core-color: #ed1c24;
+    --core-color-shade: #c5171f;
+    --core-color-tint: #f04e54;
 
+    --ion-color-primary: #ed1c24;
+    --ion-color-primary-rgb: 237, 28, 36;
+    --ion-color-primary-contrast: #ffffff;
+    --ion-color-primary-contrast-rgb: 255, 255, 255;
+    --ion-color-primary-shade: #c5171f;
+    --ion-color-primary-tint: #f04e54;
+
+    /* Secondary Color - Dark Blue (#0d1d5a) */
+    --ion-color-secondary: #0d1d5a;
+    --ion-color-secondary-rgb: 13, 29, 90;
+    --ion-color-secondary-contrast: #ffffff;
+    --ion-color-secondary-contrast-rgb: 255, 255, 255;
+    --ion-color-secondary-shade: #0a1848;
+    --ion-color-secondary-tint: #253a6b;
 }
 
 /*
@@ -17,5 +36,24 @@
  * -------------------------------------------
  */
 :root.dark {
+    /* Imagine Inglés Brand Colors for Dark Mode */
+    /* Primary Color - Red (#ed1c24) */
+    --core-color: #ed1c24;
+    --core-color-shade: #c5171f;
+    --core-color-tint: #f04e54;
 
+    --ion-color-primary: #ed1c24;
+    --ion-color-primary-rgb: 237, 28, 36;
+    --ion-color-primary-contrast: #ffffff;
+    --ion-color-primary-contrast-rgb: 255, 255, 255;
+    --ion-color-primary-shade: #c5171f;
+    --ion-color-primary-tint: #f04e54;
+
+    /* Secondary Color - Dark Blue (#0d1d5a) */
+    --ion-color-secondary: #0d1d5a;
+    --ion-color-secondary-rgb: 13, 29, 90;
+    --ion-color-secondary-contrast: #ffffff;
+    --ion-color-secondary-contrast-rgb: 255, 255, 255;
+    --ion-color-secondary-shade: #0a1848;
+    --ion-color-secondary-tint: #253a6b;
 }
