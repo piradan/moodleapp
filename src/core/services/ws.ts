@@ -825,7 +825,8 @@ export class CoreWSProvider {
 
                 // Only process the queue one time.
                 if (this.retryTimeout == 0) {
-                    this.retryTimeout = parseInt(error.headers.get('Retry-After'), 10) || 5;
+                    const retryAfter = error.headers?.get('Retry-After');
+                    this.retryTimeout = (retryAfter ? parseInt(retryAfter, 10) : 0) || 5;
                     this.logger.warn(`${error.statusText}. Retrying in ${this.retryTimeout} seconds. ` +
                         `${this.retryCalls.length} calls left.`);
 
@@ -857,12 +858,18 @@ export class CoreWSProvider {
                 details: CoreErrorHelper.getErrorMessageFromError(error) ?? 'Unknown error',
             }));
         }).catch(err => {
+            // Create a sanitized copy of ajaxData without sensitive fields
+            const sanitizedData = { ...ajaxData };
+            delete sanitizedData.wstoken;
+            delete sanitizedData.token;
+            delete sanitizedData.privatetoken;
+
             CoreErrorLogs.addErrorLog({
                 method,
                 type: String(err),
                 message: String(err.exception),
                 time: new Date().getTime(),
-                data: ajaxData,
+                data: sanitizedData,
             });
             throw err;
         });
